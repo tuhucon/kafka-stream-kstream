@@ -29,12 +29,14 @@ public class KafkaStreamHelloApplication implements CommandLineRunner {
         properties.put(StreamsConfig.DEFAULT_VALUE_SERDE_CLASS_CONFIG, Serdes.String().getClass());
 
         StreamsBuilder streamsBuilder = new StreamsBuilder();
-        streamsBuilder.stream("src-topic", Consumed.with(Serdes.String(), Serdes.String()))
+        KStream<String, String> upperStream = streamsBuilder.stream("src-topic", Consumed.with(Serdes.String(), Serdes.String()))
                 .mapValues(s -> {
                     if (s == null) return null;
                     return s.toUpperCase();
-                }).peek((s, s2) -> System.out.println(s + ": " + s2))
-                .to("des-topic", Produced.with(Serdes.String(), Serdes.String()));
+                });
+        upperStream.foreach((k, v) -> System.out.println(k + ": " + v));
+        upperStream.to("des-topic", Produced.with(Serdes.String(), Serdes.String()));
+        upperStream.to("des-topic-1", Produced.with(Serdes.String(), Serdes.String()));
 
         Topology topo = streamsBuilder.build();
         System.out.println(topo.describe());
