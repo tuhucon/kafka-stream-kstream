@@ -99,10 +99,10 @@ public class KafkaStreamHelloApplication implements CommandLineRunner {
 
         KStream<String, String> srcStream = streamsBuilder.stream(SRC_Topic, Consumed.with(Serdes.String(), Serdes.String()));
 
-        srcStream//.through("src-topic-partition-by-value",
-//                            Produced.with(Serdes.String(),
-//                                          Serdes.String(),
-//                                          (topic, key, value, numPartitions) -> Math.abs(value.hashCode() % numPartitions)))
+        srcStream.through("src-topic-partition-by-value",
+                            Produced.with(Serdes.String(),
+                                          Serdes.String(),
+                                          (topic, key, value, numPartitions) -> Math.abs(value.hashCode() % numPartitions)))
                 .transformValues(() -> new CountValueTranformer(SRC_Topic), SRC_Topic)
                 .print(Printed.toSysOut());
 
