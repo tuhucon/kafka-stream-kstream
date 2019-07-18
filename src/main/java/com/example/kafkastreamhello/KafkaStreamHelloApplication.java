@@ -1,22 +1,17 @@
 package com.example.kafkastreamhello;
 
-import lombok.AllArgsConstructor;
-import lombok.Data;
-import lombok.NoArgsConstructor;
+import com.example.kafkastreamhello.transformer.CountCharacterValueTransformer;
+import com.example.kafkastreamhello.transformer.CountValueTranformer;
 import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.streams.KafkaStreams;
 import org.apache.kafka.streams.StreamsBuilder;
 import org.apache.kafka.streams.StreamsConfig;
 import org.apache.kafka.streams.Topology;
 import org.apache.kafka.streams.kstream.*;
-import org.apache.kafka.streams.processor.ProcessorContext;
-import org.apache.kafka.streams.processor.StreamPartitioner;
 import org.apache.kafka.streams.state.KeyValueBytesStoreSupplier;
 import org.apache.kafka.streams.state.KeyValueStore;
 import org.apache.kafka.streams.state.StoreBuilder;
 import org.apache.kafka.streams.state.Stores;
-import org.apache.kafka.streams.state.internals.InMemoryKeyValueStore;
-import org.apache.kafka.streams.state.internals.KeyValueStoreBuilder;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
@@ -37,49 +32,6 @@ public class KafkaStreamHelloApplication implements CommandLineRunner {
         return srcTopicStoreBuilder;
     }
 
-    @Data
-    @NoArgsConstructor
-    @AllArgsConstructor
-    public static class ValueWithCount {
-        String value;
-        int count;
-    }
-
-
-    public static class CountValueTranformer implements ValueTransformer<String, ValueWithCount> {
-
-        private ProcessorContext context;
-        private KeyValueStore<String, Integer> store;
-        private String storeName;
-
-        public CountValueTranformer(String storeName) {
-            this.storeName = storeName;
-        }
-
-        @Override
-        public void init(ProcessorContext context) {
-            this.context = context;
-            this.store = (KeyValueStore) context.getStateStore(storeName);
-        }
-
-        @Override
-        public ValueWithCount transform(String value) {
-            System.out.println(Thread.currentThread().getId() + "------------");
-            ValueWithCount valueWithCount = new ValueWithCount(value, 1);
-            Integer currentCount = store.get(value);
-            System.out.println("value = " + value + " - before count:" + currentCount);
-            if (currentCount != null) {
-                valueWithCount.setCount(currentCount + 1);
-            }
-            store.put(value, valueWithCount.getCount());
-            return valueWithCount;
-        }
-
-        @Override
-        public void close() {
-
-        }
-    }
 
     public static void main(String[] args) {
         SpringApplication.run(KafkaStreamHelloApplication.class, args);
@@ -93,20 +45,28 @@ public class KafkaStreamHelloApplication implements CommandLineRunner {
         properties.put(StreamsConfig.DEFAULT_KEY_SERDE_CLASS_CONFIG, Serdes.String().getClass());
         properties.put(StreamsConfig.DEFAULT_VALUE_SERDE_CLASS_CONFIG, Serdes.String().getClass());
 
+
+        KeyValueBytesStoreSupplier wordCountStoreSupplier = Stores.inMemoryKeyValueStore("tuhucon");
+        StoreBuilder<KeyValueStore<String, Integer>> worCountStoreBuilder = Stores.keyValueStoreBuilder(wordCountStoreSupplier, Serdes.String(), Serdes.Integer());
+
         StreamsBuilder streamsBuilder = new StreamsBuilder();
         streamsBuilder.addStateStore(srcTopicStoreBuilder());
+        streamsBuilder.addStateStore(worCountStoreBuilder);
 
 
         KStream<String, String> srcStream = streamsBuilder.stream(SRC_Topic, Consumed.with(Serdes.String(), Serdes.String()));
 
-        srcStream.through("src-topic-partition-by-value",
+        KStream<String, String> newStream = srcStream.through("src-topic-partition-by-value",
                             Produced.with(Serdes.String(),
                                           Serdes.String(),
-                                          (topic, key, value, numPartitions) -> Math.abs(value.hashCode() % numPartitions)))
-                .transformValues(() -> new CountValueTranformer(SRC_Topic), SRC_Topic)
-                .print(Printed.toSysOut());
+                                          (topic, key, value, numPartitions) -> Math.abs(value.hashCode() % numPartitions)));
 
+        newStream
+                .transformValues(() -> new CountValueTranformer(SRC_Topic), SRC_Topic);
 
+        newStream
+                .transformValues(() -> new CountCharacterValueTransformer("tuhucon"), "tuhucon")
+                .foreach((k, v) -> System.out.println(v));
 
         Topology topo = streamsBuilder.build();
         System.out.println(topo.describe());
